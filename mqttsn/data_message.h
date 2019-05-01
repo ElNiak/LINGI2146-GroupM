@@ -56,6 +56,8 @@ typedef struct publish_message publish;
 typedef struct publishack_message puback;
 typedef struct subscribe_message suscrib;
 typedef struct suback_message suback;
+typedef struct unsubscribe_message unsuscrib;
+typedef struct unsuback_message unsuback;
 typedef struct disconnect_message disconnect;
 
 //GENERAL FORMAT
@@ -93,7 +95,7 @@ struct mqttsn_message_format {
 
 struct connect_message {
     //=== header ===
-    uint8_t message_type = CONNECT; //cf define
+    uint8_t message_type;// = CONNECT; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     // => flags
@@ -112,20 +114,20 @@ struct connect_message {
 
 struct connack_message {
     //=== header ===
-    uint8_t message_type = CONNACK; //cf define
+    uint8_t message_type;// = CONNACK; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
     uint8_t returncode;
 };
 
 struct willtopicreq_message {
     //=== header ===
-    uint8_t message_type = WILLTOPICREQ; //cf define
+    uint8_t message_type;// = WILLTOPICREQ; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 };
 
 struct willtopic_message {
     //=== header ===
-    uint8_t message_type = WILLTOPIC; //cf define
+    uint8_t message_type;// = WILLTOPIC; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     // => flags
@@ -142,13 +144,13 @@ struct willtopic_message {
 
 struct willmsgreq_message {
     //=== header ===
-    uint8_t message_type = WILLMSGREQ; //cf define
+    uint8_t message_type;// = WILLMSGREQ; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 };
 
 struct willmsg_message {
     //=== header ===
-    uint8_t message_type = WILLMSG; //cf define
+    uint8_t message_type;// = WILLMSG; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     char * willmsg;
@@ -156,7 +158,7 @@ struct willmsg_message {
 
 struct register_message {
     //=== header ===
-    uint8_t message_type = REGISTER; //cf define
+    uint8_t message_type;// = REGISTER; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     uint8_t topicID; //0x01 => Temperature , 0x02 => Humidity
@@ -166,7 +168,7 @@ struct register_message {
 
 struct regack_message {
     //=== header ===
-    uint8_t message_type = REGACK; //cf define
+    uint8_t message_type;// = REGACK; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     uint8_t topicID; //0x01 => Temperature , 0x02 => Humidity
@@ -176,7 +178,7 @@ struct regack_message {
 
 struct publish_message {
     //=== header ===
-    uint8_t message_type = PUBLISH; //cf define
+    uint8_t message_type;// = PUBLISH; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     // => flags
@@ -195,7 +197,7 @@ struct publish_message {
 
 struct publishack_message {
     //=== header ===
-    uint8_t message_type = PUBACK; //cf define
+    uint8_t message_type;// = PUBACK; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     uint8_t topicID; //0x01 => Temperature , 0x02 => Humidity
@@ -205,7 +207,7 @@ struct publishack_message {
 
 struct subscribe_message {
     //=== header ===
-    uint8_t message_type = SUBSCRIBE; //cf define
+    uint8_t message_type;// = SUBSCRIBE; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     // => flags
@@ -223,7 +225,7 @@ struct subscribe_message {
 
 struct suback_message {
     //=== header ===
-    uint8_t message_type = SUBACK; //cf define
+    uint8_t message_type;// = SUBACK; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     // => flags
@@ -242,7 +244,7 @@ struct suback_message {
 
 struct unsubscribe_message {
     //=== header ===
-    uint8_t message_type = UNSUBSCRIBE; //cf define
+    uint8_t message_type;// = UNSUBSCRIBE; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     // => flags
@@ -258,9 +260,9 @@ struct unsubscribe_message {
     uint8_t topicID; //0x01 => Temperature , 0x02 => Humidity
 };
 
-struct suback_message {
+struct unsuback_message {
     //=== header ===
-    uint8_t message_type = UNSUBACK; //cf define
+    uint8_t message_type;// = UNSUBACK; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 
     uint16_t messageid;
@@ -268,8 +270,10 @@ struct suback_message {
 
 struct disconnect_message {
     //=== header ===
-    uint8_t message_type = DISCONNECT; //cf define
+    uint8_t message_type;// = DISCONNECT; //cf define
     uint8_t message_len; //1 byte => maximum len = 256 bytes
 };
+
+publish * generateRandomPublishMessage();
 
 #endif //LINGI2146_GROUPM_DATA_MESSAGE_H
