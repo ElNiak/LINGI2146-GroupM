@@ -7,7 +7,7 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h> //gcc -lm
-
+//gcc minirpl/generatePayload.c -o  generate -lm
 char * generateData(char * ci, char * topic) {
     assert(strlen(topic) == 1);
     double data = (-50.0) + (rand()/(RAND_MAX/(90.0 - (-50.0))));
@@ -25,6 +25,9 @@ char * generateData(char * ci, char * topic) {
 }
 
 int main( int argc, const char* argv[]) {
+    int nb = (char *) ((rand() % (2 + 1 - 1)) + 1);
+    char outData[2]; //"-"+"44.44"+'\0'
+    snprintf(outData, 2, "%d", nb);
     for(int i = 0 ; i < 10; i ++)
-        printf("%d : %s\n",i,generateData("1","2"));
+        printf("%d : %s\n",i,generateData("1", outData));
 }
