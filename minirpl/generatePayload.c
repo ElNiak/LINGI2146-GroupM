@@ -5,29 +5,22 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <assert.h>
-#include <math.h> //gcc -lm
+//#include <math.h> //gcc -lm
 //gcc minirpl/generatePayload.c -o  generate -lm
+
 char * generateData(char * ci, char * topic) {
-    assert(strlen(topic) == 1);
-    double data = (-50.0) + (rand()/(RAND_MAX/(90.0 - (-50.0))));
-    double roundedData = round(data * 100) /100;
+    if(strlen(topic) != 1)
+	return NULL;
+    int data = (-50.0) + rand() % (80+1 -(-50));
+   // double roundedData = (data * 100) /100;
     int i = 0;
-    if(roundedData < 0)
+    if(data < 0)
         i = 1;
-    char outData[i+5+1]; //"-"+"44.44"+'\0'
-    snprintf(outData, i+6, "%f", roundedData);
+    char outData[i+3]; //"-"+"44"+'\0'
+    snprintf(outData, i+3, "%d", data);
     char * res = (char *) malloc(sizeof(ci) + 1 + sizeof(outData)+1);
     strcat(res,ci);
     strcat(res,topic);
     strcat(res,outData);
     return res;
-}
-
-int main( int argc, const char* argv[]) {
-    int nb = (char *) ((rand() % (2 + 1 - 1)) + 1);
-    char outData[2]; //"-"+"44.44"+'\0'
-    snprintf(outData, 2, "%d", nb);
-    for(int i = 0 ; i < 10; i ++)
-        printf("%d : %s\n",i,generateData("1", outData));
 }

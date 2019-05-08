@@ -42,6 +42,8 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
 	printf("runicast message received from %d.%d, seqno %d\n",
 		   from->u8[0], from->u8[1], seqno);
+printf("packetbuf_dataptr = %s\n",
+		   (char *)packetbuf_dataptr());
 }
 
 static void
