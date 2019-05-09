@@ -11,61 +11,48 @@
 #include "dev/button-sensor.h"
 #include "dev/leds.h"
 
+#include "mini_rpl.h"
+
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
 
 /*---------------------------------------------------------------------------*/
 PROCESS(mini_rpl_process, "Mini-rpl implementation");
-AUTOSTART_PROCESSES(&mini_rpl_process);
+PROCESS(rime_receiver_process, "Rime receiver implementation");
+AUTOSTART_PROCESSES(&rime_receiver_process,&mini_rpl_process);
 /*---------------------------------------------------------------------------*/
-struct packet;
-
-typedef struct packet
-{
-	uint8_t id;
-	uint8_t nb_hops;
-} pkt;
-
-struct ru_node;
-
-typedef struct ru_node
-{
-	rimeaddr_t node_addr;
-	uint8_t hop_dist;
-} node;
 
 node client;
 /*---------------------------------------------------------------------------*/
 /* Reliable unicast */
-static void
+void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
-	printf("runicast message received from %d.%d, seqno %d\n",
+	printf("Root: runicast message received from %d.%d, seqno %d\n",
 		   from->u8[0], from->u8[1], seqno);
-printf("packetbuf_dataptr = %s\n",
+printf("Root: packetbuf_dataptr = %s\n",
 		   (char *)packetbuf_dataptr());
 }
 
-static void
+void
 sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
-	printf("runicast message sent to %d.%d, retransmissions %d\n",
+	printf("Root: runicast message sent to %d.%d, retransmissions %d\n",
 		   to->u8[0], to->u8[1], retransmissions);
 }
 
-static void
+void
 timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
-	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+	printf("Root: runicast message timed out when sending to %d.%d, retransmissions %d\n",
 		   to->u8[0], to->u8[1], retransmissions);
 }
-static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
-															 sent_runicast,
-															 timedout_runicast};
-static struct runicast_conn runicast;
+
+
 /*---------------------------------------------------------------------------*/
+
 /* Broadcast */
-static void
+void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 {
 	printf("Root: broadcast message received from %d.%d: '%s'\n",
@@ -78,14 +65,13 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	runicast_send(&runicast, &receiver, MAX_RETRANSMISSIONS);
 
 }
-static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
-static struct broadcast_conn broadcast;
+
 /*---------------------------------------------------------------------------*/
 
 PROCESS_THREAD(mini_rpl_process, ev, data)
 {
-	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
-	PROCESS_EXITHANDLER(runicast_close(&runicast);)
+	PROCESS_EXITHANDLER(broadcast_close(&broadcast));
+	PROCESS_EXITHANDLER(runicast_close(&runicast));
 
 	PROCESS_BEGIN();
 
@@ -100,4 +86,46 @@ PROCESS_THREAD(mini_rpl_process, ev, data)
 	broadcast_open(&broadcast, 129, &broadcast_call);
 
 	PROCESS_END();
+}
+
+
+static struct runicast_conn runicast2;
+
+
+/* Reliable unicast */
+static void
+recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
+{
+    printf("RECEIVER RCV - runicast message received from %d.%d, seqno %d\n",
+           from->u8[0], from->u8[1], seqno);
+    printf("RECEIVER RCV - packetbuf_dataptr = %s\n",
+           (char *)packetbuf_dataptr());
+}
+
+static void
+sent_runicastData(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+    printf("RECEIVER - runicast message sent to %d.%d, retransmissions %d\n",
+           to->u8[0], to->u8[1], retransmissions);
+}
+
+static void
+timedout_runicastData(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+    printf("RECEIVER - runicast message timed out when sending to %d.%d, retransmissions %d\n",
+           to->u8[0], to->u8[1], retransmissions);
+}
+
+static const struct runicast_callbacks runicast_callbacksData = {recv_runicastData,
+                                                                 sent_runicastData,
+                                                                 timedout_runicastData};
+
+PROCESS_THREAD(rime_receiver_process, ev, data)
+{
+    PROCESS_EXITHANDLER(runicast_close(&runicast2));
+
+    PROCESS_BEGIN();
+    runicast_open(&runicast2, 145, &runicast_callbacksData);
+   
+    PROCESS_END();
 }
