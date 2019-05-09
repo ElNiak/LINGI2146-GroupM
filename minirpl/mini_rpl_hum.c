@@ -168,15 +168,15 @@ static struct runicast_conn runicast2;
 static void
 recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
-    printf("SENDER RCV - runicast message received from %d.%d, seqno %d\n",
+    printf("SENDER RCV HUM - runicast message received from %d.%d, seqno %d\n",
            from->u8[0], from->u8[1], seqno);
-    printf("SENDER RCV - packetbuf_dataptr = %s\n",
+    printf("SENDER RCV HUM - packetbuf_dataptr = %s\n",
            (char *)packetbuf_dataptr());
     if (parent.node_addr.u8[0] != 0)
     {
         while(runicast_is_transmitting(&runicast)){}
         packetbuf_copyfrom(packetbuf_dataptr(), strlen(packetbuf_dataptr()));
-	printf("SENDER SNT R - %u.%u: sending runicast to address %u.%u\n",
+	printf("SENDER SNT R HUM - %u.%u: sending runicast to address %u.%u\n",
                     from->u8[0],
                     from->u8[1],
                     parent.node_addr.u8[0],
@@ -212,30 +212,29 @@ PROCESS_THREAD(rime_sender_process, ev, data)
     PROCESS_YIELD();
     if(rimeaddr_node_addr.u8[0] == 1 &&
         rimeaddr_node_addr.u8[1] == 0) {
-            printf("PROCESS_WAIT_EVENT_UNTIL\n");
+            printf("HUM PROCESS_WAIT_EVENT_UNTIL\n");
             PROCESS_WAIT_EVENT_UNTIL(0);
     }
 
     if(parent.node_addr.u8[0] == 0 &&
         parent.node_addr.u8[1] == 0) {
-            printf("PROCESS_WAIT_EVENT_UNTIL 2\n");
+            printf("HUM PROCESS_WAIT_EVENT_UNTIL 2\n");
             PROCESS_WAIT_EVENT_UNTIL(0);
     }
 
-    printf("PROCESS_WAIT_EVENT_UNTIL 3\n");
+    printf("HUM PROCESS_WAIT_EVENT_UNTIL 3\n");
     while(1)
     {
         static struct etimer et;
         etimer_set(&et,4 *CLOCK_SECOND);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
         if(!runicast_is_transmitting(&runicast2)) {
-            int nb = (char *) ((rand() % (2 + 1 - 1)) + 1);
-            char outData[2]; //"-"+"44.44"+'\0'
-            snprintf(outData, 2, "%d", nb);
-            char * pp = generateData("1", outData);
-            printf("SENDER SNT - pp = %s \n",pp);
+            char outData[2]; 
+            snprintf(outData, 2, "%d", rimeaddr_node_addr.u8[0]);
+            char * pp = generateDataH(outData);
+            printf("SENDER SNT HUM - payload = %s \n",pp);
             packetbuf_copyfrom(pp, strlen(pp));
-            printf("SENDER SNT - %u.%u: sending runicast to address %u.%u\n",
+            printf("SENDER SNT HUM - %u.%u: sending runicast to address %u.%u\n",
                     rimeaddr_node_addr.u8[0],
                     rimeaddr_node_addr.u8[1],
                     parent.node_addr.u8[0],
