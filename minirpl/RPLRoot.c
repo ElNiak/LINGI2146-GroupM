@@ -95,7 +95,7 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
     packetbuf_copyfrom(0, 1);
     broadcast_send(&broadcastRPL);
 
-    BROADCAST : while(1) {
+    BROADCAST : while(1) { //TODO
         etimer_set(&et,10 *CLOCK_SECOND);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
         packetbuf_copyfrom(0, 1);
