@@ -12,7 +12,8 @@
 
 #include "DataGenerator.c"
 
-#define TYPE 2 //TODO
+// #define TYPE 1 // Humidity
+#define TYPE 2 //Temperature
 
 /*---------------------------------------------------------------------------*/
 PROCESS(mini_rpl_process, "RPLSender implementation");
@@ -60,7 +61,9 @@ uint8_t last_sent_data;
 /* Behaviour of the sensor node :
    - 0 : data is sent periodically (every x seconds)
    - 1 : data is sent only when there is a change
-   - 2 : data is not sent since there are no subscribers for its subject.
+   - 2 : data is not sent since there are no subscribers for temperature.
+   - 3 : data is not sent since there are no subscribers for humidity.
+   - 4 : data is not sent since there are no subscribers at all.
 */
 uint8_t config_sensor_data = 0;
 
@@ -385,7 +388,7 @@ configuration_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uin
 
 	char * payload = (char *) packetbuf_dataptr();
 	uint8_t config = (uint8_t) atoi(payload);
-	if(config >= 0 && config <= 2){
+	if(config >= 0 && config <= 4){
 		config_sensor_data = config;
 		relay_config_data(payload);
 	}
@@ -494,7 +497,7 @@ PROCESS_THREAD(rime_sender_process, ev, data) {
                 printDPKT(pp, parent.node_addr.u8[0],parent.node_addr.u8[1],"SENDER", "SENT");
                 runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
             }
-        } else if (config_sensor_data == 2){
+        } else if ((config_sensor_data == 2 && TYPE == 2) || (config_sensor_data == 3 && TYPE == 1) || config_sensor_data == 4){
             // Do nothing because there are no subscribers
         }
     }

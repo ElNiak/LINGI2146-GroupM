@@ -9,8 +9,13 @@
 #include "Message.c"
 
 void printDPKT(dpkt *r, const unsigned char from, const unsigned char from2,char * client, char* act){
-    if(r->neg == 1) printf("%s{%d.%d > %s} - payload = (id:%u, topic:%u, data:-%u) \n",client, from, from2, act,r->id, r->topic, r->data);
-    else printf("%s{%d.%d > %s} - payload = (id:%u, topic:%u, data:%u) \n",client, from,  from2, act,r->id, r->topic,  r->data);
+    if(r->neg == 1){ 
+        printf("%s{%d.%d > %s} - payload = (id:%u, topic:%u, data:-%u) \n",client, from, from2, act,r->id, r->topic, r->data);
+        printf("# %u %u %u) \n", r->id, r->topic, r->data);
+    }
+    else { 
+        printf("%s{%d.%d > %s} - payload = (id:%u, topic:%u, data:%u) \n",client, from,  from2, act,r->id, r->topic,  r->data);
+    }
 }
 
 dpkt * generateData(uint8_t ci, int s) {
