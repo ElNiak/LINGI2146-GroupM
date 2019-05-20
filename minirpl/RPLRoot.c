@@ -55,7 +55,7 @@ remove_child(int index){
 
 
 
-int c = 0; //nb of good message receive
+int gc = 0; //nb of good message receive
 int k = 4; //some treshold
 int tmin = 10;
 int tmax = 60 * 5;
@@ -157,9 +157,8 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 static struct broadcast_conn broadcastRPL;
 void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
-    printf("Root{%d.%d <> R-BROADCAST}\n",
-           from->u8[0], from->u8[1]);
-
+    gc++;
+    //printf("Root{%d.%d <> R-BROADCAST}\n",from->u8[0], from->u8[1]);
 }
 
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
@@ -268,8 +267,14 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
         printf("RPL{TC = %d}\n",i);
         etimer_set(&et,i *CLOCK_SECOND);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-        packetbuf_copyfrom(0, 1);
-        if(c < k) broadcast_send(&broadcastRPL);
+        if(gc < k) {
+            packetbuf_copyfrom(0, 1);
+            broadcast_send(&broadcastRPL);
+        }
+        else {
+            tc = 2*tc;
+            if(tc > tmax) tc = tmax;
+        }
     }
 
     goto BROADCAST;
@@ -285,8 +290,6 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
 static struct runicast_conn runicastMQTT;
 void
 recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
-    printDPKT((dpkt *)packetbuf_dataptr(),
-              &from->u8[0],&from->u8[2],"BROKER", "RECEIVE");
     /* OPTIONAL: Sender history */
     struct history_entry *e = NULL;
     for(e = list_head(history_table); e != NULL; e = e->next) {
@@ -313,10 +316,9 @@ recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno
         /* Update existing history entry */
         e->seq = seqno;
     }
-    /*rimeaddr_t receiver;
-    receiver.u8[0] = from->u8[0];
-    receiver.u8[1] = from->u8[1];
-    runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);*/
+    printDPKT((dpkt *)packetbuf_dataptr(),
+              from->u8[0],from->u8[2],"BROKER", "RECEIVE");
+    //send_child_ack();
 }
 
 void
