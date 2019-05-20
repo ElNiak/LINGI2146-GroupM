@@ -75,40 +75,36 @@ static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
  *  ===========================================================================
  */
 PROCESS_THREAD(mini_rpl_process, ev, data) {
-    PROCESS_EXITHANDLER(broadcast_close(&broadcastRPL));
-    PROCESS_EXITHANDLER(runicast_close(&runicastRPL));
+PROCESS_EXITHANDLER(broadcast_close(&broadcastRPL));
+PROCESS_EXITHANDLER(runicast_close(&runicastRPL));
 
-    PROCESS_BEGIN();
+PROCESS_BEGIN();
 
-    client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
-    client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
-    client.hop_dist = 0;
+client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
+client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
+client.hop_dist = 0;
 
-    runicast_open(&runicastRPL, 144, &runicast_callbacks);
+runicast_open(&runicastRPL, 144, &runicast_callbacks);
 
-    static struct etimer et;
+static struct etimer et;
 
-    broadcast_open(&broadcastRPL, 129, &broadcast_call);
+broadcast_open(&broadcastRPL, 129, &broadcast_call);
 
-    etimer_set(&et,5 *CLOCK_SECOND);
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-    packetbuf_copyfrom(0, 1);
-    broadcast_send(&broadcastRPL);
+etimer_set(&et,5 *CLOCK_SECOND);
+PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+packetbuf_copyfrom(0, 1);
+broadcast_send(&broadcastRPL);
 
-    BROADCAST : while(1) { //TODO
-        etimer_set(&et,10 *CLOCK_SECOND);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-        packetbuf_copyfrom(0, 1);
-        broadcast_send(&broadcastRPL);
-    }
+BROADCAST : while(1) { //TODO
+etimer_set(&et,15 *CLOCK_SECOND);
+PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+packetbuf_copyfrom(0, 1);
+broadcast_send(&broadcastRPL);
+}
 
-    while(cont != 0) {
-        PROCESS_WAIT_EVENT_UNTIL(0);
-    }
+goto BROADCAST;
 
-    goto BROADCAST;
-
-    PROCESS_END();
+PROCESS_END();
 }
 
 /***
@@ -119,12 +115,12 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
 static struct runicast_conn runicastMQTT;
 void
 recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
-    printDPKT((dpkt *)packetbuf_dataptr(), 
-        &from->u8[0],&from->u8[2],"BROKER", "RECEIVE");
-    rimeaddr_t receiver;
+    printDPKT((dpkt *)packetbuf_dataptr(),
+              &from->u8[0],&from->u8[2],"BROKER", "RECEIVE");
+    /*rimeaddr_t receiver;
     receiver.u8[0] = from->u8[0];
     receiver.u8[1] = from->u8[1];
-    runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
+    runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);*/
 }
 
 void
@@ -149,10 +145,10 @@ static const struct runicast_callbacks runicast_callbacksData = {recv_runicastDa
  *  ===========================================================================
  */
 PROCESS_THREAD(rime_receiver_process, ev, data) {
-    PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
+PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
 
-    PROCESS_BEGIN();
-    runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
+PROCESS_BEGIN();
+runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
 
-    PROCESS_END();
+PROCESS_END();
 }
