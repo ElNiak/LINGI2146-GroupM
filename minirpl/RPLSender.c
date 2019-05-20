@@ -56,7 +56,7 @@ LIST(history_tableRPL);
 MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 MEMB(history_memRPL, struct history_entry, NUM_HISTORY_ENTRIES);
 
-uint8_t last_sent_data;
+static uint8_t last_sent_data;
 
 /* Behaviour of the sensor node :
    - 0 : data is sent periodically (every x seconds)
@@ -65,7 +65,7 @@ uint8_t last_sent_data;
    - 3 : data is not sent since there are no subscribers for humidity.
    - 4 : data is not sent since there are no subscribers at all.
 */
-uint8_t config_sensor_data = 0;
+static uint8_t config_sensor_data = 0;
 
 child_node children[MAX_CHILDREN];
 static int nb_children = 0;
@@ -388,8 +388,10 @@ configuration_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uin
 
 	char * payload = (char *) packetbuf_dataptr();
 	uint8_t config = (uint8_t) atoi(payload);
+	printf("CONFIG %d", config);
 	if(config >= 0 && config <= 4){
 		config_sensor_data = config;
+		printf("New config for node %d", config);
 		relay_config_data(payload);
 	}
 }

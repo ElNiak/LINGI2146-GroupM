@@ -353,18 +353,20 @@ PROCESS_THREAD(rime_receiver_process, ev, data) {
 PROCESS(listen_gateway, "Listening messages from the gateway");
 
 PROCESS_THREAD(listen_gateway, ev, data){
+	PROCESS_EXITHANDLER(runicast_close(&runicastConfig));
     PROCESS_BEGIN();
-
+	runicast_open(&runicastConfig, 146, &configuration_runicast_callbacks);
     for(;;) {
         PROCESS_YIELD();
         if(ev == serial_line_event_message) {
             char *d = (char *)data;
-            printf("received line: %s \n", d);
+            printf("received line : %s. Send to %d\n", d, nb_children);
             packetbuf_copyfrom(d, strlen(d));
 
             //Send the config to all the child nodes
             int i;
             for(i = 0; i < nb_children; i++) {
+				printf("Child %d, (%d,%d)", i, children[i].node_addr.u8[0], children[i].node_addr.u8[1]);
                 runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
             }
             packetbuf_clear();
