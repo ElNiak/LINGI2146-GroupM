@@ -145,10 +145,10 @@ static const struct runicast_callbacks runicast_callbacksData = {recv_runicastDa
  *  ===========================================================================
  */
 PROCESS_THREAD(rime_receiver_process, ev, data) {
-PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
+    PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
 
-PROCESS_BEGIN();
-runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
+    PROCESS_BEGIN();
+    runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
 
-PROCESS_END();
+    PROCESS_END();
 }
