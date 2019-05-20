@@ -18,7 +18,6 @@
 /*---------------------------------------------------------------------------*/
 PROCESS(mini_rpl_process, "RPLRoot implementation");
 PROCESS(rime_receiver_process, "MQTTReceiver implementation");
-AUTOSTART_PROCESSES(&rime_receiver_process,&mini_rpl_process);
 /*---------------------------------------------------------------------------*/
 
 /***
@@ -115,11 +114,11 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
     int message_code = (int) hops;
     if (message_code == ACK_CHILD){ // Verify if the message is an ACK child message
         if(nb_children < MAX_CHILDREN){
-            child_node c;
-            c.node_addr.u8[0] = from->u8[0];
-            c.node_addr.u8[1] = from->u8[1];
-            if(child_exists(c) == -1){
-                children[nb_children] = c;
+            child_node child;
+            child.node_addr.u8[0] = from->u8[0];
+            child.node_addr.u8[1] = from->u8[1];
+            if(child_exists(child) == -1){
+                children[nb_children] = child;
                 nb_children++;
             }
         }
@@ -189,7 +188,7 @@ configuration_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, u
     child.node_addr.u8[1] = to->u8[1];
     int index = child_exists(child);
 
-    if(index != -1){
+    if(index != -1) {
         remove_child(index);
     }
 }
@@ -204,30 +203,30 @@ static const struct runicast_callbacks configuration_runicast_callbacks = {confi
  *  ===========================================================================
  */
 
-static char rx_buf[SERIAL_BUF_SIZE];
-static int rx_buf_index;
-static void uart_rx_callback(unsigned char c) {
-    if(c != '\n'){
-        rx_buf[rx_buf_index] = c;
-    }
-    if(c == '\n' || c == EOF || c == '\0'){
-        printf("%s\n", (char *)rx_buf);
-        packetbuf_clear();
-        rx_buf[strcspn ( rx_buf, "\n" )] = '\0';
-        packetbuf_copyfrom(rx_buf, strlen(rx_buf));
+// static char rx_buf[SERIAL_BUF_SIZE];
+// static int rx_buf_index;
+// static void uart_rx_callback(unsigned char c) {
+//     if(c != '\n'){
+//         rx_buf[rx_buf_index] = c;
+//     }
+//     if(c == '\n' || c == EOF || c == '\0'){
+//         printf("%s\n", (char *)rx_buf);
+//         packetbuf_clear();
+//         rx_buf[strcspn ( rx_buf, "\n" )] = '\0';
+//         packetbuf_copyfrom(rx_buf, strlen(rx_buf));
 
-        //Send the config to all the child nodes
-        int i;
-        for(i = 0; i < nb_children; i++) {
-            runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
-        }
+//         //Send the config to all the child nodes
+//         int i;
+//         for(i = 0; i < nb_children; i++) {
+//             runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
+//         }
 
-        memset(rx_buf, 0, rx_buf_index);
-        rx_buf_index = 0;
-    } else {
-        rx_buf_index = rx_buf_index + 1;
-    }
-}
+//         memset(rx_buf, 0, rx_buf_index);
+//         rx_buf_index = 0;
+//     } else {
+//         rx_buf_index = rx_buf_index + 1;
+//     }
+// }
 
 
 /***
@@ -252,8 +251,8 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
 
     broadcast_open(&broadcastRPL, 129, &broadcast_call);
 
-    uart0_init(BAUD2UBR(115200));
-    uart0_set_input(uart_rx_callback);
+    // uart0_init(BAUD2UBR(115200));
+    // uart0_set_input(uart_rx_callback);
 
     etimer_set(&et,5 *CLOCK_SECOND);
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
@@ -318,7 +317,6 @@ recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno
     }
     printDPKT((dpkt *)packetbuf_dataptr(),
               from->u8[0],from->u8[2],"BROKER", "RECEIVE");
-    //send_child_ack();
 }
 
 void
@@ -351,3 +349,28 @@ PROCESS_THREAD(rime_receiver_process, ev, data) {
     runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
     PROCESS_END();
 }
+
+PROCESS(listen_gateway, "Listening messages from the gateway");
+
+PROCESS_THREAD(listen_gateway, ev, data){
+    PROCESS_BEGIN();
+
+    for(;;) {
+        PROCESS_YIELD();
+        if(ev == serial_line_event_message) {
+            char *d = (char *)data;
+            printf("received line: %s \n", d);
+            packetbuf_copyfrom(d, strlen(d));
+
+            //Send the config to all the child nodes
+            int i;
+            for(i = 0; i < nb_children; i++) {
+                runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
+            }
+            packetbuf_clear();
+        }
+    }
+    PROCESS_END();
+}
+
+AUTOSTART_PROCESSES(&rime_receiver_process,&mini_rpl_process, &listen_gateway);

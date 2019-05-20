@@ -188,12 +188,12 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
             uint8_t * hops = client.hop_dist;
             packetbuf_copyfrom(&hops, 1);
             broadcast_send(&broadcastRPL);
-            rimeaddr_t receiver;
-            receiver.u8[0] = from->u8[0];
-            receiver.u8[1] = from->u8[1];
-            hops = client.hop_dist;
-            packetbuf_copyfrom(&hops, 1);
-            runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
+            // rimeaddr_t receiver;
+            // receiver.u8[0] = from->u8[0];
+            // receiver.u8[1] = from->u8[1];
+            // hops = client.hop_dist;
+            // packetbuf_copyfrom(&hops, 1);
+            // runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
             gc = 0;
             tc = tmin;
         }
