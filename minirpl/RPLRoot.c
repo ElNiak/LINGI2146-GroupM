@@ -102,10 +102,6 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
         broadcast_send(&broadcastRPL);
     }
 
-    while(cont != 0) {
-        PROCESS_WAIT_EVENT_UNTIL(0);
-    }
-
     goto BROADCAST;
 
     PROCESS_END();
