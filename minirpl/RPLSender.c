@@ -17,6 +17,7 @@
 /*---------------------------------------------------------------------------*/
 PROCESS(mini_rpl_process, "RPLSender implementation");
 PROCESS(rime_sender_process, "MQTTSender implementation");
+PROCESS(rime_update_process, "RPLupdate implementation");
 AUTOSTART_PROCESSES(&mini_rpl_process);
 /*---------------------------------------------------------------------------*/
 
@@ -34,8 +35,24 @@ static struct runicast_conn runicastMQTT;
 
 int share = 0;
 
-int c = 0;
-int k = 0.5;
+int gc = 0; //nb of good message receive
+int k = 4; //some treshold
+int tmin = 10;
+int tmax = 300;
+int tc = 10;
+
+/* OPTIONAL: Sender history.
+ * Detects duplicate callbacks at receiving nodes.
+ * Duplicates appear when ack messages are lost. */
+struct history_entry {
+    struct history_entry *next;
+    rimeaddr_t addr;
+    uint8_t seq;
+};
+LIST(history_table);
+LIST(history_tableRPL);
+MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
+MEMB(history_memRPL, struct history_entry, NUM_HISTORY_ENTRIES);
 
 /***
  *  ===========================================================================
@@ -44,6 +61,32 @@ int k = 0.5;
  */
 void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
+    /* OPTIONAL: Sender history */
+    struct history_entry *e = NULL;
+    for(e = list_head(history_tableRPL); e != NULL; e = e->next) {
+        if(rimeaddr_cmp(&e->addr, from)) {
+            break;
+        }
+    }
+    if(e == NULL) {
+        /* Create new history entry */
+        e = memb_alloc(&history_memRPL);
+        if(e == NULL) {
+            e = list_chop(history_tableRPL); /* Remove oldest at full history */
+        }
+        rimeaddr_copy(&e->addr, from);
+        e->seq = seqno;
+        list_push(history_tableRPL, e);
+    } else {
+        /* Detect duplicate callback */
+        if(e->seq == seqno) {
+            printf("runicast message received from %d.%d, seqno %d (DUPLICATE)\n",
+                   from->u8[0], from->u8[1], seqno);
+            return;
+        }
+        /* Update existing history entry */
+        e->seq = seqno;
+    }
     uint8_t *hops = (uint8_t *) packetbuf_dataptr();
     if (USE_RSSI == 0 && *hops > parent.hop_dist && parent.node_addr.u8[0] != 0) {
 
@@ -64,6 +107,8 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
         hops = client.hop_dist;
         packetbuf_copyfrom(&hops, 1);
         runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
+        gc = 0;
+        tc = tmin;
     }
 }
 
@@ -97,7 +142,8 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
     uint8_t *hops = (uint8_t *) packetbuf_dataptr();
     /* If we receive a direct communication from the broadcast we sent,
     we should update the parent node if the sender is closer */
-    printf("RPL{%d.%d <> RECEIVE-BROADCAST}\n", from->u8[0], from->u8[1]);
+    printf("RPL{%d.%d <> RECEIVE-BROADCAST} - C = %d\n", from->u8[0], from->u8[1],gc);
+    gc = gc+1;
     if(parent.node_addr.u8[0] == 0) { //No parent => Choose one
         if (USE_RSSI == 0 && *hops < parent.hop_dist && *hops != 253) {
             parent.node_addr.u8[0] = from->u8[0];
@@ -109,12 +155,13 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
             uint8_t * hops = client.hop_dist;
             packetbuf_copyfrom(&hops, 1);
             broadcast_send(&broadcastRPL);
+            process_start(&rime_update_process,NULL);
             //Si on utilise des rooting table
-            /*rimeaddr_t receiver;
+            rimeaddr_t receiver;
             receiver.u8[0] = from->u8[0];
             receiver.u8[1] = from->u8[1];
             packetbuf_copyfrom(&hops, 1);
-            runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);*/
+            runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
         }
         if(USE_RSSI == 1 && last_rssi > parent.rssi) {
             parent.node_addr.u8[0] = from->u8[0];
@@ -132,6 +179,8 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
             receiver.u8[0] = from->u8[0];
             receiver.u8[1] = from->u8[1];
             runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
+            gc = 0;
+            tc = tmin;
         }
         else if(USE_RSSI == 0 && *hops < parent.hop_dist){ //Find better parent => Replace current
             parent.node_addr.u8[0] = from->u8[0];
@@ -140,6 +189,8 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
             client.hop_dist = *hops + 1;
             printf("RPL{RECONFIG - PARENT:%d.%d} - parent.hop : %d - %d : client.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist, client.hop_dist);
+            gc = 0;
+            tc = tmin;
         }
         else {
             if(share == 5){
@@ -149,7 +200,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
                 share = 0;
             }
             else {
-                share++;
+                share = share + 1;
             }
         }
     }
@@ -165,6 +216,32 @@ static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
  */
 void
 recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
+    /* OPTIONAL: Sender history */
+    struct history_entry *e = NULL;
+    for(e = list_head(history_table); e != NULL; e = e->next) {
+        if(rimeaddr_cmp(&e->addr, from)) {
+            break;
+        }
+    }
+    if(e == NULL) {
+        /* Create new history entry */
+        e = memb_alloc(&history_mem);
+        if(e == NULL) {
+            e = list_chop(history_table); /* Remove oldest at full history */
+        }
+        rimeaddr_copy(&e->addr, from);
+        e->seq = seqno;
+        list_push(history_table, e);
+    } else {
+        /* Detect duplicate callback */
+        if(e->seq == seqno) {
+            printf("runicast message received from %d.%d, seqno %d (DUPLICATE)\n",
+                   from->u8[0], from->u8[1], seqno);
+            return;
+        }
+        /* Update existing history entry */
+        e->seq = seqno;
+    }
     if (parent.node_addr.u8[0] != 0) {
         printf("SENDER{%d.%d[%d] > FOWARD > %u.%u}\n", from->u8[0], from->u8[1], seqno, parent.node_addr.u8[0], parent.node_addr.u8[1]);
         runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
@@ -207,7 +284,11 @@ parent.node_addr.u8[0] = 0;
 parent.node_addr.u8[1] = 0;
 parent.hop_dist = 254;
 parent.rssi = -65534;
-
+/* OPTIONAL: Sender history */
+list_init(history_table);
+list_init(history_tableRPL);
+memb_init(&history_mem);
+memb_init(&history_memRPL);
 client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
 client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
 
@@ -224,7 +305,7 @@ process_start(&rime_sender_process,NULL);
 }
 
 while (parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0) {
-etimer_set(&et, 30 * CLOCK_SECOND);
+etimer_set(&et,30 *CLOCK_SECOND);
 PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 uint8_t * hops = 253; //DIS message
 packetbuf_copyfrom(&hops, 1);
@@ -254,3 +335,26 @@ runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
 PROCESS_END();
 }
 
+
+PROCESS_THREAD(rime_update_process, ev, data) {
+PROCESS_BEGIN();
+static struct etimer et;
+while(1) {
+int randompercentage = random_rand() % 100 + 1;//0-100%
+randompercentage = randompercentage/2;//0-50%
+int i = (tc/2) + (int) ((double)(1/(double)randompercentage) * tc);
+etimer_set(&et,i *CLOCK_SECOND);
+printf("RPL UPDATE{TC = %d, C = %d}\n",i,gc);
+PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+if(parent.node_addr.u8[0] != 0 && gc < k) {
+uint8_t * hops = client.hop_dist;
+packetbuf_copyfrom(&hops, 1);
+broadcast_send(&broadcastRPL);
+}
+else {
+tc = 2*tc;
+if(tc > tmax) tc = tmax;
+}
+}
+PROCESS_END();
+}
