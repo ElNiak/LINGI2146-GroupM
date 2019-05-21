@@ -60,9 +60,10 @@ int tmin = 10;
 int tmax = 60 * 5;
 int tc = 10;
 
-/* OPTIONAL: Sender history.
+/* Sender history :
  * Detects duplicate callbacks at receiving nodes.
- * Duplicates appear when ack messages are lost. */
+ * Duplicates appear when ack messages are lost.
+*/
 struct history_entry {
     struct history_entry *next;
     rimeaddr_t addr;
@@ -82,7 +83,6 @@ MEMB(history_memRPL, struct history_entry, NUM_HISTORY_ENTRIES);
 static struct runicast_conn runicastRPL;
 void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
-    /* OPTIONAL: Sender history */
     struct history_entry *e = NULL;
     for(e = list_head(history_tableRPL); e != NULL; e = e->next) {
         if(rimeaddr_cmp(&e->addr, from)) {
@@ -243,8 +243,10 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
     client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
     client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
     client.hop_dist = 0;
+
     list_init(history_tableRPL);
     memb_init(&history_memRPL);
+
     runicast_open(&runicastRPL, 144, &runicast_callbacks);
 
     static struct etimer et;
@@ -263,7 +265,7 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
         int randompercentage = random_rand() % 100 + 1;//0-100%
         randompercentage = randompercentage/2;//0-50%
         int i = (tc/2) + (int) ((double)(1/(double)randompercentage) * tc);
-        printf("RPL{TC = %d}\n",i);
+        //printf("RPL{TC = %d}\n",i);
         etimer_set(&et,i *CLOCK_SECOND);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
         if(gc < k) {
@@ -275,9 +277,7 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
             if(tc > tmax) tc = tmax;
         }
     }
-
     goto BROADCAST;
-
     PROCESS_END();
 }
 
@@ -289,7 +289,6 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
 static struct runicast_conn runicastMQTT;
 void
 recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
-    /* OPTIONAL: Sender history */
     struct history_entry *e = NULL;
     for(e = list_head(history_table); e != NULL; e = e->next) {
         if(rimeaddr_cmp(&e->addr, from)) {
@@ -315,8 +314,14 @@ recv_runicastData(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno
         /* Update existing history entry */
         e->seq = seqno;
     }
-    printDPKT((dpkt *)packetbuf_dataptr(),
-              from->u8[0],from->u8[2],"BROKER", "RECEIVE");
+    dpkt *r = (dpkt *)packetbuf_dataptr();
+    printDPKT(r,from->u8[0],from->u8[2],"BROKER", "RECEIVE");
+    if(r->neg == 1){ //negative data (e.g -5 degree)
+        printf("# %u %u -%u \n", r->id, r->topic, r->data);
+    }
+    else { //positive value -> reason why this : difficult to produce negative random value
+        printf("# %u %u %u \n", r->id, r->topic, r->data);
+    }
 }
 
 void
@@ -343,9 +348,10 @@ static const struct runicast_callbacks runicast_callbacksData = {recv_runicastDa
 PROCESS_THREAD(rime_receiver_process, ev, data) {
     PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
     PROCESS_BEGIN();
-    /* OPTIONAL: Sender history */
+
     list_init(history_table);
     memb_init(&history_mem);
+
     runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
     PROCESS_END();
 }
@@ -353,9 +359,9 @@ PROCESS_THREAD(rime_receiver_process, ev, data) {
 PROCESS(listen_gateway, "Listening messages from the gateway");
 
 PROCESS_THREAD(listen_gateway, ev, data){
-	PROCESS_EXITHANDLER(runicast_close(&runicastConfig));
+    PROCESS_EXITHANDLER(runicast_close(&runicastConfig));
     PROCESS_BEGIN();
-	runicast_open(&runicastConfig, 146, &configuration_runicast_callbacks);
+    unicast_open(&runicastConfig, 146, &configuration_runicast_callbacks);
     for(;;) {
         PROCESS_YIELD();
         if(ev == serial_line_event_message) {
@@ -366,7 +372,7 @@ PROCESS_THREAD(listen_gateway, ev, data){
             //Send the config to all the child nodes
             int i;
             for(i = 0; i < nb_children; i++) {
-				printf("Child %d, (%d,%d)", i, children[i].node_addr.u8[0], children[i].node_addr.u8[1]);
+                printf("Child %d, (%d,%d)", i, children[i].node_addr.u8[0], children[i].node_addr.u8[1]);
                 runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
             }
             packetbuf_clear();

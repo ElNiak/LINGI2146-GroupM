@@ -9,11 +9,10 @@
 #include "Message.c"
 
 void printDPKT(dpkt *r, const unsigned char from, const unsigned char from2,char * client, char* act){
-    if(r->neg == 1){ 
+    if(r->neg == 1){ //negative data (e.g -5 degree)
         printf("%s{%d.%d > %s} - payload = (id:%u, topic:%u, data:-%u) \n",client, from, from2, act,r->id, r->topic, r->data);
-        printf("# %u %u %u \n", r->id, r->topic, r->data);
     }
-    else { 
+    else { //positive value -> reason why this : difficult to produce negative random value
         printf("%s{%d.%d > %s} - payload = (id:%u, topic:%u, data:%u) \n",client, from,  from2, act,r->id, r->topic,  r->data);
     }
 }
@@ -22,7 +21,8 @@ dpkt * generateData(uint8_t ci, int s) {
     if(s == 2) {
         dpkt * res = malloc(sizeof(dpkt));
         int data = random_rand() % 100 + 1;//-100C <-> 100C
-        if(data%2 == 1){ res->neg = 1; data /= 2;}
+        int rd = random_rand() % 100 + 1;
+        if(rd % 2 == 0) { res->neg = 1; data /= 2;}
         else res->neg = 0;
         res->data = data;
         res->id = ci;

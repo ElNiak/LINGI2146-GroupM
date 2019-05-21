@@ -2,8 +2,8 @@
 #include <stdlib.h>
 
 #define MAX_RETRANSMISSIONS 4 // 0 because no doublon detector
-#define MAX_CHILDREN 8
-#define ACK_CHILD -42 
+#define MAX_CHILDREN 1
+#define ACK_CHILD -42
 #define NUM_HISTORY_ENTRIES 4
 #define USE_RSSI 0
 #define SERIAL_BUF_SIZE 128
