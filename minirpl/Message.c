@@ -11,6 +11,7 @@
 struct dpkt;
 typedef struct dpkt
 {
+    struct dpkt * next; //For the list
     uint8_t data;
     uint8_t id;
     uint8_t topic;
