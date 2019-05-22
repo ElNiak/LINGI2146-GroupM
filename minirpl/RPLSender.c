@@ -13,7 +13,7 @@
 #include "DataGenerator.c"
 
 // #define TYPE 1 // Humidity
-#define TYPE 2 //Temperature
+// #define TYPE 2 //Temperature
 
 /*---------------------------------------------------------------------------*/
 PROCESS(mini_rpl_process, "RPLSender implementation");
@@ -35,17 +35,21 @@ static struct broadcast_conn broadcastRPL;
 static struct runicast_conn runicastMQTT;
 static struct runicast_conn runicastConfig;
 
-int share = 0;
+int share = 0; //Use to limit the number of response to broadcast message
 
+//Trickle timer for broadcasting
 int gc = 0; //nb of good message receive
 int k = 4; //some treshold
-int tmin = 10;
-int tmax = 300;
-int tc = 10;
+int tmin = 10; //10 sec
+int tmax = 300; //5 min
+int tc = 10; //time current = T
 
-/* OPTIONAL: Sender history.
+int type = 0;
+
+/* Sender history :
  * Detects duplicate callbacks at receiving nodes.
- * Duplicates appear when ack messages are lost. */
+ * Duplicates appear when ack messages are lost.
+*/
 struct history_entry {
     struct history_entry *next;
     rimeaddr_t addr;
@@ -55,6 +59,11 @@ LIST(history_table);
 LIST(history_tableRPL);
 MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 MEMB(history_memRPL, struct history_entry, NUM_HISTORY_ENTRIES);
+
+
+int maxAggregate = 1;
+LIST(aggregate_data);
+LIST(last_aggregate_data);
 
 static uint8_t last_sent_data;
 
@@ -78,15 +87,15 @@ static int nb_children = 0;
 
 static void
 send_child_ack() {
-	/* Wait for the runicast channel to be available*/
-	while(runicast_is_transmitting(&runicastRPL)){}
-	packetbuf_clear();
-	uint16_t max = ACK_CHILD;
-	char buf[16];
-	snprintf(buf, sizeof(buf), "%d", max);
-	packetbuf_copyfrom(&buf, strlen(buf));
-	runicast_send(&runicastRPL, &parent.node_addr, MAX_RETRANSMISSIONS);
-	packetbuf_clear();
+    /* Wait for the runicast channel to be available*/
+    while(runicast_is_transmitting(&runicastRPL)){}
+    packetbuf_clear();
+    uint16_t max = ACK_CHILD;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", max);
+    packetbuf_copyfrom(&buf, strlen(buf));
+    runicast_send(&runicastRPL, &parent.node_addr, MAX_RETRANSMISSIONS);
+    packetbuf_clear();
 }
 
 
@@ -118,7 +127,6 @@ remove_child(int index){
  */
 void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
-    /* OPTIONAL: Sender history */
     struct history_entry *e = NULL;
     for(e = list_head(history_tableRPL); e != NULL; e = e->next) {
         if(rimeaddr_cmp(&e->addr, from)) {
@@ -166,12 +174,12 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
             parent.node_addr.u8[1] = from->u8[1];
             parent.rssi = last_rssi;
             printf("RPL{RECONFIG2 - PARENT :%d.%d]} - %d : parent.hop\n",
-                parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist);
-            /*
-            uint8_t * hops = client.hop_dist;
-            packetbuf_copyfrom(&hops, 1);
+                   parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist);
+
+            //uint8_t * hops = client.hop_dist;
+            //packetbuf_copyfrom(&hops, 1);
             broadcast_send(&broadcastRPL);
-            rimeaddr_t receiver;
+            /*rimeaddr_t receiver;
             receiver.u8[0] = from->u8[0];
             receiver.u8[1] = from->u8[1];
             hops = client.hop_dist;
@@ -179,12 +187,16 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
             runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
             */
             send_child_ack();
+            gc = 0;
+            tc = tmin;
         }
         else if(USE_RSSI == 0 && *hops < parent.hop_dist && child_exists(c) == -1) {
             parent.node_addr.u8[0] = from->u8[0];
             parent.node_addr.u8[1] = from->u8[1];
             parent.hop_dist = *hops;
             client.hop_dist = *hops + 1;
+            maxAggregate = client.hop_dist;
+            if(maxAggregate < 1) maxAggregate = 1;
             printf("RPL{RECONFIG2 - PARENT :%d.%d]} - %d : parent.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist);
             send_child_ack();
@@ -240,7 +252,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
     uint8_t *hops = (uint8_t *) packetbuf_dataptr();
     /* If we receive a direct communication from the broadcast we sent,
     we should update the parent node if the sender is closer */
-    printf("RPL{%d.%d <> RECEIVE-BROADCAST} - C = %d\n", from->u8[0], from->u8[1],gc);
+    //printf("RPL{%d.%d <> RECEIVE-BROADCAST} - C = %d\n", from->u8[0], from->u8[1],gc);
     gc = gc+1;
     if(parent.node_addr.u8[0] == 0) { //No parent => Choose one
         if (USE_RSSI == 0 && *hops < parent.hop_dist && *hops != 253) {
@@ -248,6 +260,8 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
             parent.node_addr.u8[1] = from->u8[1];
             parent.hop_dist = *hops;
             client.hop_dist = *hops + 1;
+            maxAggregate = client.hop_dist;
+            if(maxAggregate < 1) maxAggregate = 1;
             printf("RPL{CHOOSE-PARENT:%d.%d]} - parent.hop : %d - %d : client.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist, client.hop_dist);
             uint8_t hops = client.hop_dist;
@@ -279,13 +293,15 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
             parent.node_addr.u8[1] = from->u8[1];
             parent.hop_dist = *hops;
             client.hop_dist = *hops + 1;
+            maxAggregate = client.hop_dist;
+            if(maxAggregate < 1) maxAggregate = 1;
             printf("RPL{RECONFIG - PARENT:%d.%d} - parent.hop : %d - %d : client.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist, client.hop_dist);
             gc = 0;
             tc = tmin;
         }
         else {
-            if(share == 5){
+            if(share == 5){ //Use to limit the number of response to broadcast message
                 uint8_t hops = client.hop_dist;
                 packetbuf_copyfrom(&hops, 1);
                 broadcast_send(&broadcastRPL);
@@ -369,58 +385,58 @@ static const struct runicast_callbacks runicast_callbacksData = {recv_runicastDa
 
 static void
 relay_config_data(char * s_payload) {
-	while(runicast_is_transmitting(&runicastConfig)){}
-	int len = strlen(s_payload);
-	char buf[len];
-	snprintf(buf, sizeof(buf), "%s", s_payload);
-	packetbuf_clear();
-	packetbuf_copyfrom(&buf, strlen(buf));
-	int i;
-	for(i = 0; i < nb_children; i++) {
-		runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
-	}
-	packetbuf_clear();
+    while(runicast_is_transmitting(&runicastConfig)){}
+    int len = strlen(s_payload);
+    char buf[len];
+    snprintf(buf, sizeof(buf), "%s", s_payload);
+    packetbuf_clear();
+    packetbuf_copyfrom(&buf, strlen(buf));
+    int i;
+    for(i = 0; i < nb_children; i++) {
+        runicast_send(&runicastConfig, &children[i].node_addr, MAX_RETRANSMISSIONS);
+    }
+    packetbuf_clear();
 }
 
 static void
 configuration_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
     printf("SENDER{%d.%d[%d] > FORWARD > %d CHILDREN}\n", from->u8[0], from->u8[1], seqno, nb_children);
 
-	char * payload = (char *) packetbuf_dataptr();
-	uint8_t config = (uint8_t) atoi(payload);
-	printf("CONFIG %d", config);
-	if(config >= 0 && config <= 4){
-		config_sensor_data = config;
-		printf("New config for node %d", config);
-		relay_config_data(payload);
-	}
+    char * payload = (char *) packetbuf_dataptr();
+    uint8_t config = (uint8_t) atoi(payload);
+    printf("CONFIG %d", config);
+    if(config >= 0 && config <= 4){
+        config_sensor_data = config;
+        printf("New config for node %d", config);
+        relay_config_data(payload);
+    }
 }
 
 static void
 configuration_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions) {
-  printf("SENDER{%d.%d <> RETRANSMIT:%d}\n",
+    printf("SENDER{%d.%d <> RETRANSMIT:%d}\n",
            to->u8[0], to->u8[1],retransmissions);
 
 }
 
 static void
 configuration_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions) {
-  	printf("SENDER{%d.%d <> TIMEOUT:%d}\n",
+    printf("SENDER{%d.%d <> TIMEOUT:%d}\n",
            to->u8[0], to->u8[1], retransmissions);
 
-	child_node child;
-	child.node_addr.u8[0] = to->u8[0];
-	child.node_addr.u8[1] = to->u8[1];
-	int index = child_exists(child);
+    child_node child;
+    child.node_addr.u8[0] = to->u8[0];
+    child.node_addr.u8[1] = to->u8[1];
+    int index = child_exists(child);
 
-	if(index != -1) {
-		remove_child(index);
-	}
+    if(index != -1) {
+        remove_child(index);
+    }
 }
 
 static const struct runicast_callbacks configuration_runicast_callbacks = {configuration_recv_runicast,
-                                                                 configuration_sent_runicast,
-                                                                 configuration_timedout_runicast};
+                                                                           configuration_sent_runicast,
+                                                                           configuration_timedout_runicast};
 
 
 /***
@@ -443,12 +459,11 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
     client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
     client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
 
-    /* OPTIONAL: Sender history */
     list_init(history_table);
     list_init(history_tableRPL);
+    list_init(aggregate_data);
     memb_init(&history_mem);
     memb_init(&history_memRPL);
-
 
     runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
     runicast_open(&runicastRPL, 144, &runicast_callbacks);
@@ -473,7 +488,6 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
             broadcast_send(&broadcastRPL);
         }
     }
-
     goto BROADCAST;
     PROCESS_END();
 }
@@ -486,21 +500,48 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
 PROCESS_THREAD(rime_sender_process, ev, data) {
     PROCESS_BEGIN();
     if(parent.node_addr.u8[0] != 0) {
-        dpkt * pp = generateData(rimeaddr_node_addr.u8[0],TYPE);
-        if (config_sensor_data == 0){
-            last_sent_data = pp->data;
-            packetbuf_copyfrom((void *) pp, 4);
-            printDPKT(pp, parent.node_addr.u8[0],parent.node_addr.u8[1],"SENDER", "SENT");
-            runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
-        } else if (config_sensor_data == 1){
-            if (pp->data != last_sent_data){
-                last_sent_data = pp->data;
-                packetbuf_copyfrom((void *) pp, 4);
-                printDPKT(pp, parent.node_addr.u8[0],parent.node_addr.u8[1],"SENDER", "SENT");
+        int rd = random_rand() % 100 + 1;
+        if(rd % 2 == 0) type = 1;
+        else type = 2 ;
+        dpkt * pp = generateData(rimeaddr_node_addr.u8[0],type);
+        if(list_length(aggregate_data) < maxAggregate){
+            list_push(aggregate_data,pp);
+        }
+        else{
+            list_push(aggregate_data, pp);
+            if (config_sensor_data == 0){
+                last_aggregate_data = aggregate_data;
+                const int size = list_length(aggregate_data);
+                dpkt array[size];// = malloc(sizeof(dpkt)*size);
+                int i = 0;
+                for(; i < size;i++){
+                    dpkt* ppp = (dpkt *) list_chop(aggregate_data);
+                    array[i] = *ppp;
+                    printDPKT(&array[i] , parent.node_addr.u8[0],parent.node_addr.u8[1],"PRINT", "PUSH-SEND");
+                }
+                //printf("SIZE : %d - SIZE-Byte : %d\n",size, sizeof(array));
+                packetbuf_copyfrom(array, sizeof(array));
                 runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
+                list_init(aggregate_data);
+            } else if (config_sensor_data == 1){
+                if (pp->data != last_sent_data){
+                    last_aggregate_data = aggregate_data;
+                    const int size = list_length(aggregate_data);
+                    dpkt array[size];// = malloc(sizeof(dpkt)*size);
+                    int i = 0;
+                    for(; i < size;i++){
+                        dpkt* ppp = (dpkt *) list_chop(aggregate_data);
+                        array[i] = *ppp;
+                        printDPKT(&array[i] , parent.node_addr.u8[0],parent.node_addr.u8[1],"PRINT", "PUSH-SEND");
+                    }
+                    //printf("SIZE : %d - SIZE-Byte : %d\n",size, sizeof(array));
+                    packetbuf_copyfrom(array, sizeof(array));
+                    runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
+                    list_init(aggregate_data);
+                }
+            } else if ((config_sensor_data == 2 && type == 2) || (config_sensor_data == 3 && type == 1) || config_sensor_data == 4){
+                // Do nothing because there are no subscribers
             }
-        } else if ((config_sensor_data == 2 && TYPE == 2) || (config_sensor_data == 3 && TYPE == 1) || config_sensor_data == 4){
-            // Do nothing because there are no subscribers
         }
     }
     PROCESS_END();
@@ -515,14 +556,13 @@ PROCESS_THREAD(rime_update_process, ev, data) {
         randompercentage = randompercentage/2;//0-50%
         int i = (tc/2) + (int) ((double)(1/(double)randompercentage) * tc);
         etimer_set(&et,i *CLOCK_SECOND);
-        printf("RPL UPDATE{TC = %d, C = %d}\n",i,gc);
+        //printf("TRICKLE-TIMER{T = %d}\n",i);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
         if(parent.node_addr.u8[0] != 0 && gc < k) {
             uint8_t * hops = client.hop_dist;
             packetbuf_copyfrom(&hops, 1);
             broadcast_send(&broadcastRPL);
-        }
-        else {
+        } else {
             tc = 2*tc;
             if(tc > tmax) tc = tmax;
         }
