@@ -19,7 +19,6 @@
 PROCESS(mini_rpl_process, "RPLSender implementation");
 PROCESS(rime_sender_process, "MQTTSender implementation");
 PROCESS(rime_update_process, "RPLupdate implementation");
-AUTOSTART_PROCESSES(&mini_rpl_process);
 /*---------------------------------------------------------------------------*/
 
 /***
@@ -90,11 +89,24 @@ send_child_ack() {
     /* Wait for the runicast channel to be available*/
     while(runicast_is_transmitting(&runicastRPL)){}
     packetbuf_clear();
-    uint16_t max = ACK_CHILD;
+    int max = ACK_CHILD;
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", max);
     packetbuf_copyfrom(&buf, strlen(buf));
     runicast_send(&runicastRPL, &parent.node_addr, MAX_RETRANSMISSIONS);
+    packetbuf_clear();
+}
+
+static void
+send_child_remove(rimeaddr_t old_parent) {
+    /* Wait for the runicast channel to be available*/
+    while(runicast_is_transmitting(&runicastRPL)){}
+    packetbuf_clear();
+    int max = RM_CHILD;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", max);
+    packetbuf_copyfrom(&buf, strlen(buf));
+    runicast_send(&runicastRPL, &old_parent, MAX_RETRANSMISSIONS);
     packetbuf_clear();
 }
 
@@ -152,33 +164,49 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
         /* Update existing history entry */
         e->seq = seqno;
     }
-    uint8_t *hops = (uint8_t *) packetbuf_dataptr();
-    int message_code = (int) hops;
+    char * payload = (char *) packetbuf_dataptr();
+    uint8_t hops = (uint8_t *) atoi(payload);
+    int message_code = atoi(payload);
     if (message_code == ACK_CHILD) {
         if(nb_children < MAX_CHILDREN){
-            child_node c;
-            c.node_addr.u8[0] = from->u8[0];
-            c.node_addr.u8[1] = from->u8[1];
-            if(child_exists(c) == -1){
-                children[nb_children] = c;
+            child_node child;
+            child.node_addr.u8[0] = from->u8[0];
+            child.node_addr.u8[1] = from->u8[1];
+            if(child_exists(child) == -1){
+                children[nb_children] = child;
                 nb_children++;
+                printf("%d - nb_child: %d \n", client.node_addr.u8[0], nb_children);
+            }
+        }
+    } else if (message_code == RM_CHILD) {
+        if(nb_children > 0){
+            child_node child;
+            child.node_addr.u8[0] = from->u8[0];
+            child.node_addr.u8[1] = from->u8[1];
+            int idx = child_exists(child);
+            if(idx != -1) {
+                remove_child(idx);
             }
         }
     } else {
         uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-        child_node c;
-        c.node_addr.u8[0] = from->u8[0];
-        c.node_addr.u8[1] = from->u8[1];
-        if (USE_RSSI == 1 && last_rssi < parent.rssi && child_exists(c) == -1) {
+        child_node child;
+        child.node_addr.u8[0] = from->u8[0];
+        child.node_addr.u8[1] = from->u8[1];
+        if (USE_RSSI == 1 && last_rssi < parent.rssi && child_exists(child) == -1) {
+            send_child_remove(parent.node_addr);
             parent.node_addr.u8[0] = from->u8[0];
             parent.node_addr.u8[1] = from->u8[1];
             parent.rssi = last_rssi;
             printf("RPL{RECONFIG2 - PARENT :%d.%d]} - %d : parent.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist);
 
-            //uint8_t * hops = client.hop_dist;
-            //packetbuf_copyfrom(&hops, 1);
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
             broadcast_send(&broadcastRPL);
+            packetbuf_clear();
             /*rimeaddr_t receiver;
             receiver.u8[0] = from->u8[0];
             receiver.u8[1] = from->u8[1];
@@ -190,19 +218,23 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno) {
             gc = 0;
             tc = tmin;
         }
-        else if(USE_RSSI == 0 && *hops < parent.hop_dist && child_exists(c) == -1) {
+        else if(USE_RSSI == 0 && hops < parent.hop_dist && child_exists(child) == -1) {
+            send_child_remove(parent.node_addr);
             parent.node_addr.u8[0] = from->u8[0];
             parent.node_addr.u8[1] = from->u8[1];
-            parent.hop_dist = *hops;
-            client.hop_dist = *hops + 1;
+            parent.hop_dist = hops;
+            client.hop_dist = hops + 1;
             maxAggregate = client.hop_dist;
             if(maxAggregate < 1) maxAggregate = 1;
             printf("RPL{RECONFIG2 - PARENT :%d.%d]} - %d : parent.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist);
             send_child_ack();
-            uint8_t * hops = client.hop_dist;
-            packetbuf_copyfrom(&hops, 1);
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
             broadcast_send(&broadcastRPL);
+            packetbuf_clear();
             // rimeaddr_t receiver;
             // receiver.u8[0] = from->u8[0];
             // receiver.u8[1] = from->u8[1];
@@ -249,62 +281,98 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
     uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-    uint8_t *hops = (uint8_t *) packetbuf_dataptr();
+    char * payload = (char *) packetbuf_dataptr();
+    uint8_t hops = (uint8_t) atoi(payload);
     /* If we receive a direct communication from the broadcast we sent,
     we should update the parent node if the sender is closer */
     //printf("RPL{%d.%d <> RECEIVE-BROADCAST} - C = %d\n", from->u8[0], from->u8[1],gc);
     gc = gc+1;
-    if(parent.node_addr.u8[0] == 0) { //No parent => Choose one
-        if (USE_RSSI == 0 && *hops < parent.hop_dist && *hops != 253) {
+    if(parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0) { //No parent => Choose one
+        if (USE_RSSI == 0 && hops < parent.hop_dist && hops != 253) {
             parent.node_addr.u8[0] = from->u8[0];
             parent.node_addr.u8[1] = from->u8[1];
-            parent.hop_dist = *hops;
-            client.hop_dist = *hops + 1;
+            parent.hop_dist = hops;
+            client.hop_dist = hops + 1;
             maxAggregate = client.hop_dist;
             if(maxAggregate < 1) maxAggregate = 1;
             printf("RPL{CHOOSE-PARENT:%d.%d]} - parent.hop : %d - %d : client.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist, client.hop_dist);
-            uint8_t hops = client.hop_dist;
-            packetbuf_copyfrom(&hops, 1);
+            send_child_ack();
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
             broadcast_send(&broadcastRPL);
+            packetbuf_clear();
             process_start(&rime_update_process,NULL);
-        }
-        if(USE_RSSI == 1 && last_rssi > parent.rssi) {
+        } else if(USE_RSSI == 1 && last_rssi > parent.rssi) {
             parent.node_addr.u8[0] = from->u8[0];
             parent.node_addr.u8[1] = from->u8[1];
             parent.rssi = last_rssi;
             printf("RPL{CHOOSE-PARENT:%d.%d} - parent.hop : %d - %d : client.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist, client.hop_dist);
+            send_child_ack();
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
+            broadcast_send(&broadcastRPL);
+            packetbuf_clear();
+            process_start(&rime_update_process,NULL);
         }
     }
     else { //Already have parent
-        if(USE_RSSI == 0 && *hops == 253) { //Receive a request DIS from a node
+        if(USE_RSSI == 0 && hops == 253) { //Receive a request DIS from a node
             uint8_t hops = client.hop_dist;
-            packetbuf_copyfrom(&hops, 1);
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", hops);
+            packetbuf_copyfrom(&buf, strlen(buf));
             rimeaddr_t receiver;
             receiver.u8[0] = from->u8[0];
             receiver.u8[1] = from->u8[1];
             runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
+            packetbuf_clear();
             gc = 0;
             tc = tmin;
-        }
-        else if(USE_RSSI == 0 && *hops < parent.hop_dist){ //Find better parent => Replace current
+            
+        } else if(USE_RSSI == 0 && hops < parent.hop_dist){ //Find better parent => Replace current
+            send_child_remove(parent.node_addr);
             parent.node_addr.u8[0] = from->u8[0];
             parent.node_addr.u8[1] = from->u8[1];
-            parent.hop_dist = *hops;
-            client.hop_dist = *hops + 1;
+            parent.hop_dist = hops;
+            client.hop_dist = hops + 1;
             maxAggregate = client.hop_dist;
             if(maxAggregate < 1) maxAggregate = 1;
             printf("RPL{RECONFIG - PARENT:%d.%d} - parent.hop : %d - %d : client.hop\n",
                    parent.node_addr.u8[0], parent.node_addr.u8[1], parent.hop_dist, client.hop_dist);
             gc = 0;
             tc = tmin;
-        }
-        else {
+            send_child_ack();
+        } else if(USE_RSSI == 1 && last_rssi > parent.rssi) {
+            send_child_remove(parent.node_addr);
+            parent.node_addr.u8[0] = from->u8[0];
+            parent.node_addr.u8[1] = from->u8[1];
+            parent.rssi = last_rssi;
+            printf("RPL{RECONFIG - PARENT:%d.%d} - parent.rssi : %d \n",
+                   parent.node_addr.u8[0], parent.node_addr.u8[1], parent.rssi);
+            send_child_ack();
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
+            broadcast_send(&broadcastRPL);
+            packetbuf_clear();
+            process_start(&rime_update_process,NULL);
+        } else {
             if(share == 5){ //Use to limit the number of response to broadcast message
                 uint8_t hops = client.hop_dist;
-                packetbuf_copyfrom(&hops, 1);
+                packetbuf_clear();
+                char buf[8];
+                snprintf(buf, sizeof(buf), "%d", hops);
+                packetbuf_copyfrom(&buf, strlen(buf));
                 broadcast_send(&broadcastRPL);
+                packetbuf_clear();
                 share = 0;
             }
             else {
@@ -481,12 +549,16 @@ PROCESS_THREAD(mini_rpl_process, ev, data) {
     while (parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0) {
         etimer_set(&et, 30 * CLOCK_SECOND);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+        packetbuf_clear();
         uint8_t hops = 253; //DIS message
-        packetbuf_copyfrom(&hops, 1);
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", hops);
+        packetbuf_copyfrom(&buf, strlen(buf));
         if(parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0)  {
             printf("RPL{DIS-Message}\n");
             broadcast_send(&broadcastRPL);
         }
+        packetbuf_clear();
     }
     goto BROADCAST;
     PROCESS_END();
@@ -559,9 +631,12 @@ PROCESS_THREAD(rime_update_process, ev, data) {
         //printf("TRICKLE-TIMER{T = %d}\n",i);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
         if(parent.node_addr.u8[0] != 0 && gc < k) {
-            uint8_t * hops = client.hop_dist;
-            packetbuf_copyfrom(&hops, 1);
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
             broadcast_send(&broadcastRPL);
+            packetbuf_clear();
         } else {
             tc = 2*tc;
             if(tc > tmax) tc = tmax;
@@ -569,3 +644,6 @@ PROCESS_THREAD(rime_update_process, ev, data) {
     }
     PROCESS_END();
 }
+
+
+AUTOSTART_PROCESSES(&mini_rpl_process);
