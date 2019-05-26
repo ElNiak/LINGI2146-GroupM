@@ -28,3 +28,4 @@ Exemple :
 ./LaunchGatewayMQTT.sh 1888 /dev/ttyUSB0 temperature humidity
 ./LaunchSimulationGatewayMQTT.sh 1886 /dev/pts/4 temperature humidity
 
+
