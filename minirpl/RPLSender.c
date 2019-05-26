@@ -62,7 +62,7 @@ MEMB(history_memRPL, struct history_entry, NUM_HISTORY_ENTRIES);
 
 int maxAggregate = 1;
 LIST(aggregate_data);
-LIST(last_aggregate_data);
+
 
 static uint8_t last_sent_data;
 
@@ -73,7 +73,7 @@ static uint8_t last_sent_data;
    - 3 : data is not sent since there are no subscribers for humidity.
    - 4 : data is not sent since there are no subscribers at all.
 */
-static uint8_t config_sensor_data = 1;
+static uint8_t config_sensor_data = 0;
 
 child_node children[MAX_CHILDREN];
 static int nb_children = 0;
@@ -496,7 +496,6 @@ configuration_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, u
     child.node_addr.u8[0] = to->u8[0];
     child.node_addr.u8[1] = to->u8[1];
     int index = child_exists(child);
-
     if(index != -1) {
         remove_child(index);
     }
@@ -513,55 +512,55 @@ static const struct runicast_callbacks configuration_runicast_callbacks = {confi
  *  ===========================================================================
  */
 PROCESS_THREAD(mini_rpl_process, ev, data) {
-PROCESS_EXITHANDLER(broadcast_close(&broadcastRPL));
-PROCESS_EXITHANDLER(runicast_close(&runicastRPL));
-PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
-PROCESS_EXITHANDLER(runicast_close(&runicastConfig));
-PROCESS_BEGIN();
+    PROCESS_EXITHANDLER(broadcast_close(&broadcastRPL));
+    PROCESS_EXITHANDLER(runicast_close(&runicastRPL));
+    PROCESS_EXITHANDLER(runicast_close(&runicastMQTT));
+    PROCESS_EXITHANDLER(runicast_close(&runicastConfig));
+    PROCESS_BEGIN();
 
-parent.node_addr.u8[0] = 0;
-parent.node_addr.u8[1] = 0;
-parent.hop_dist = 254;
-parent.rssi = (signed) -65534;
+    parent.node_addr.u8[0] = 0;
+    parent.node_addr.u8[1] = 0;
+    parent.hop_dist = 254;
+    parent.rssi = (signed) -65534;
 
-client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
-client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
+    client.node_addr.u8[0] = rimeaddr_node_addr.u8[0];
+    client.node_addr.u8[1] = rimeaddr_node_addr.u8[1];
 
-list_init(history_table);
-list_init(history_tableRPL);
-list_init(aggregate_data);
-memb_init(&history_mem);
-memb_init(&history_memRPL);
+    list_init(history_table);
+    list_init(history_tableRPL);
+    list_init(aggregate_data);
+    memb_init(&history_mem);
+    memb_init(&history_memRPL);
 
-runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
-runicast_open(&runicastRPL, 144, &runicast_callbacks);
-broadcast_open(&broadcastRPL, 129, &broadcast_call);
-runicast_open(&runicastConfig, 146, &configuration_runicast_callbacks);
+    runicast_open(&runicastMQTT, 145, &runicast_callbacksData);
+    runicast_open(&runicastRPL, 144, &runicast_callbacks);
+    broadcast_open(&broadcastRPL, 129, &broadcast_call);
+    runicast_open(&runicastConfig, 146, &configuration_runicast_callbacks);
 
-static struct etimer et;
-BROADCAST: while(parent.node_addr.u8[0] != 0) {
-int time = random_rand() % 100 + 1; //1 -> 50 sec
-etimer_set(&et,(time/2) *CLOCK_SECOND);
-PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-process_start(&rime_sender_process,NULL);
-}
+    static struct etimer et;
+    BROADCAST: while(parent.node_addr.u8[0] != 0) {
+        int time = random_rand() % 100 + 1; //1 -> 50 sec
+        etimer_set(&et,(time/2) *CLOCK_SECOND);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+        process_start(&rime_sender_process,NULL);
+    }
 
-while (parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0) {
-etimer_set(&et, 30 * CLOCK_SECOND);
-PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-packetbuf_clear();
-uint8_t hops = 253; //DIS message
-char buf[8];
-snprintf(buf, sizeof(buf), "%d", hops);
-packetbuf_copyfrom(&buf, strlen(buf));
-if(parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0)  {
-printf("RPL{DIS-Message}\n");
-broadcast_send(&broadcastRPL);
-}
-packetbuf_clear();
-}
-goto BROADCAST;
-PROCESS_END();
+    while (parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0) {
+        etimer_set(&et, 30 * CLOCK_SECOND);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+        packetbuf_clear();
+        uint8_t hops = 253; //DIS message
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", hops);
+        packetbuf_copyfrom(&buf, strlen(buf));
+        if(parent.node_addr.u8[0] == 0 && parent.node_addr.u8[1] == 0)  {
+            printf("RPL{DIS-Message}\n");
+            broadcast_send(&broadcastRPL);
+        }
+        packetbuf_clear();
+    }
+    goto BROADCAST;
+    PROCESS_END();
 }
 
 /***
@@ -570,73 +569,83 @@ PROCESS_END();
  *  ===========================================================================
  */
 PROCESS_THREAD(rime_sender_process, ev, data) {
-PROCESS_BEGIN();
-if(parent.node_addr.u8[0] != 0) {
-int rd = random_rand() % 100 + 1;
-if(rd % 2 == 0) type = 1;
-else type = 2 ;
-dpkt * pp = generateData(rimeaddr_node_addr.u8[0],type);
-if (config_sensor_data == 0){
-if(list_length(aggregate_data) < maxAggregate){
-list_push(aggregate_data,pp);
-}
-else {
-list_push(aggregate_data, pp);
-last_sent_data = pp->data;
-last_aggregate_data = aggregate_data;
-const int size = list_length(aggregate_data);
-dpkt array[size];// = malloc(sizeof(dpkt)*size);
-int i = 0;
-for(; i<size; i++){
-dpkt *ppp = (dpkt *) list_chop(aggregate_data);
-array[i] = *ppp;
-printDPKT(&array[i] , parent.node_addr.u8[0],parent.node_addr.u8[1],"PRINT", "PUSH-SEND");
-}
-//printf("SIZE : %d - SIZE-Byte : %d\n",size, sizeof(array));
-packetbuf_copyfrom(array,sizeof(array));
-runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
-list_init(aggregate_data);
-}
-} else if (config_sensor_data == 1){
-if (pp->data != last_sent_data){
-last_sent_data = pp->data;
-dpkt array[1];
-array[0] = *pp;
-packetbuf_copyfrom(array,sizeof(array));
-printDPKT(&array[0] , parent.node_addr.u8[0],parent.node_addr.u8[1],"PRINT", "SEND");
-runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
-}
-} else if ((config_sensor_data == 2 && type == 2) || (config_sensor_data == 3 && type == 1) || config_sensor_data == 4){
-// Do nothing because there are no subscribers
-}
-}
-PROCESS_END();
+    PROCESS_BEGIN();
+    if(parent.node_addr.u8[0] != 0) {
+        int rd = random_rand() % 100 + 1;
+        if(rd % 2 == 0) type = 1;
+        else type = 2 ;
+        dpkt * pp = generateData(rimeaddr_node_addr.u8[0],type);
+        if (config_sensor_data == 0){
+            last_sent_data = pp->data;
+            if(list_length(aggregate_data) < maxAggregate){
+                list_push(aggregate_data,pp);
+            }
+            else {
+                list_push(aggregate_data, pp);
+                const int size = list_length(aggregate_data);
+                dpkt array[size];// = malloc(sizeof(dpkt)*size);
+                int i = 0;
+                for(; i<size; i++){
+                    array[i] = *(dpkt *) list_chop(aggregate_data);
+                    printDPKT(&array[i] , parent.node_addr.u8[0],parent.node_addr.u8[1],"PRINT", "PUSH-SEND");
+                }
+                //printf("SIZE : %d - SIZE-Byte : %d\n",size, sizeof(array));
+                packetbuf_copyfrom(array,sizeof(array));
+                runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
+                list_init(aggregate_data);
+            }
+        } else if (config_sensor_data == 1){
+            if (pp->data != last_sent_data){
+                last_sent_data = pp->data;
+                if(list_length(aggregate_data) < maxAggregate){
+                    list_push(aggregate_data,pp);
+                }
+                else {
+                    list_push(aggregate_data, pp);
+                    const int size = list_length(aggregate_data);
+                    dpkt array[size];// = malloc(sizeof(dpkt)*size);
+                    int i = 0;
+                    for(; i<size; i++){
+                        array[i] = *(dpkt *) list_chop(aggregate_data);
+                        printDPKT(&array[i] , parent.node_addr.u8[0],parent.node_addr.u8[1],"PRINT", "PUSH-SEND");
+                    }
+                    //printf("SIZE : %d - SIZE-Byte : %d\n",size, sizeof(array));
+                    packetbuf_copyfrom(array,sizeof(array));
+                    runicast_send(&runicastMQTT, &parent.node_addr, MAX_RETRANSMISSIONS);
+                    list_init(aggregate_data);
+                }
+            }
+        } else if ((config_sensor_data == 2 && type == 2) || (config_sensor_data == 3 && type == 1) || config_sensor_data == 4){
+            // Do nothing because there are no subscribers
+        }
+    }
+    PROCESS_END();
 }
 
 
 PROCESS_THREAD(rime_update_process, ev, data) {
-PROCESS_BEGIN();
-static struct etimer et;
-while(1) {
-int randompercentage = random_rand() % 100 + 1;//0-100%
-randompercentage = randompercentage/2;//0-50%
-int i = (tc/2) + (int) ((double)(1/(double)randompercentage) * tc);
-etimer_set(&et,i *CLOCK_SECOND);
-//printf("TRICKLE-TIMER{T = %d}\n",i);
-PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-if(parent.node_addr.u8[0] != 0 && gc < k) {
-packetbuf_clear();
-char buf[8];
-snprintf(buf, sizeof(buf), "%d", client.hop_dist);
-packetbuf_copyfrom(&buf, strlen(buf));
-broadcast_send(&broadcastRPL);
-packetbuf_clear();
-} else {
-tc = 2*tc;
-if(tc > tmax) tc = tmax;
-}
-}
-PROCESS_END();
+    PROCESS_BEGIN();
+    static struct etimer et;
+    while(1) {
+        int randompercentage = random_rand() % 100 + 1;//0-100%
+        randompercentage = randompercentage/2;//0-50%
+        int i = (tc/2) + (int) ((double)(1/(double)randompercentage) * tc);
+        etimer_set(&et,i *CLOCK_SECOND);
+        //printf("TRICKLE-TIMER{T = %d}\n",i);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+        if(parent.node_addr.u8[0] != 0 && gc < k) {
+            packetbuf_clear();
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", client.hop_dist);
+            packetbuf_copyfrom(&buf, strlen(buf));
+            broadcast_send(&broadcastRPL);
+            packetbuf_clear();
+        } else {
+            tc = 2*tc;
+            if(tc > tmax) tc = tmax;
+        }
+    }
+    PROCESS_END();
 }
 
 
