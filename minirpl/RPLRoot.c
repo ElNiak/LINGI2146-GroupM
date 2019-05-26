@@ -167,7 +167,23 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 static struct broadcast_conn broadcastRPL;
 void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
+    uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+    char * payload = (char *) packetbuf_dataptr();
+    uint8_t hops = (uint8_t) atoi(payload);
     gc++;
+    if(USE_RSSI == 0 && hops == 253) { //Receive a request DIS from a node
+        uint8_t hops = client.hop_dist;
+        packetbuf_clear();
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", hops);
+        packetbuf_copyfrom(&buf, strlen(buf));
+        rimeaddr_t receiver;
+        receiver.u8[0] = from->u8[0];
+        receiver.u8[1] = from->u8[1];
+        runicast_send(&runicastRPL, &receiver, MAX_RETRANSMISSIONS);
+        packetbuf_clear();
+        gc = 0;
+    }
     //printf("Root{%d.%d <> R-BROADCAST}\n",from->u8[0], from->u8[1]);
 }
 
