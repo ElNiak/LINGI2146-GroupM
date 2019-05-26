@@ -16,10 +16,10 @@ make clean && make RPLSender.upload nodeid=X nodemac=X MOTES=/dev/ttyUSBY
 - Start the Gateway
 - Start some subscibers
 
-cd Root-Gateway
-./Y.sh p sp [topics*]
+cd minirpl
+./LaunchX.sh p sp [topics*]
 where : 
-Y = LaunchSimulationGatewayMQTT if you want to launch launch the simulation for simulated nodes cooja OR  Y = LaunchGatewayMQTT if you want to launch the gateway for real modes
+LaunchX = LaunchSimulationGatewayMQTT if you want to launch launch the simulation for simulated nodes cooja OR  LaunchX = LaunchGatewayMQTT if you want to launch the gateway for real modes
 p is the port of the broker you want to start
 sp is the serial port of the root mode 
 topics is a list of topics you want to subscribre
