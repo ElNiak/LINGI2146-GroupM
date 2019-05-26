@@ -172,7 +172,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from) {
     uint8_t hops = (uint8_t) atoi(payload);
     gc++;
     if(USE_RSSI == 0 && hops == 253) { //Receive a request DIS from a node
-        uint8_t hops = client.hop_dist;
+        uint8_t hops = 0;
         packetbuf_clear();
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", hops);
